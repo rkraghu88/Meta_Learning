@@ -6,14 +6,18 @@
 import MQ_Scheduling_PC_Inst as MQ
 import numpy as np
 import scipy.stats as stats
+import SharedWeights
 #import matplotlib
 #matplotlib.use("TkAgg")
 
 #plt.switch_backend("TkAgg")
 
 class ThreadRun:
-    def __init__(self, lambda_vec,total_users=10,good_users=5,popularity=1.0001,thread_name="default thread"):
+    def __init__(self, lambda_vec,total_users=2,good_users=1,popularity=1.0001,thread_name="default thread", meta_param_len=1, agent_id=0):
+
         self.ThreadName=thread_name
+        self.meta_param_len=meta_param_len
+        self.id=agent_id
         self.N_Files = 100
         self.total_users=total_users
         self.good_users=good_users
@@ -36,7 +40,6 @@ class ThreadRun:
         self.FadingMQ=[]
 
     def runFunc(self):
-
         for i in range(len(self.lambda_vec)):
             self.total_lambda=self.lambda_vec[i]
             #print(total_lambda)
@@ -50,7 +53,10 @@ class ThreadRun:
             requests=np.array(seq1)
             services=0
             #FadingMQ=MQ.MulticastQueue(requests, timelines, users, service_time, total_users, cache_size)
-            self.FadingMQ=MQ.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName)
+            self.FadingMQ=MQ.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName, self.meta_param_len, self.id)
+
+            SharedWeights.weights=np.append(SharedWeights.weights,self.FadingMQ.DDQNA.meta_model.get_weights())
+            self.FadingMQ.DDQNA.update_global_weights()
             ret_val=1
             while(ret_val):
                 #print('--')

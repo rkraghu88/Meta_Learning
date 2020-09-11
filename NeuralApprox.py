@@ -1,26 +1,27 @@
 import numpy as np
 import tensorflow as tf
-import tensorflow.python.keras.backend as K
+#yymport tensorflow.python.keras.backend as K
 import AdamOpt as AdamOpt
 from scipy.optimize import approx_fprime
-from tensorflow.python.keras.initializers import RandomUniform
-from tensorflow.python.keras.models import Model
-from tensorflow.python.keras.optimizers import Adam
-from tensorflow.python.keras.layers import Input, Dense, concatenate, LSTM, Reshape, BatchNormalization, Lambda, Flatten, Conv1D
+from tensorflow.compat.v1.keras.initializers import RandomUniform
+from tensorflow.compat.v1.keras.models import Model
+from tensorflow.compat.v1.keras.optimizers import Adam
+from tensorflow.compat.v1.keras.layers import Input, Dense, concatenate, LSTM, Reshape, BatchNormalization, Lambda, Flatten, Conv1D
 
+#tf.disable_v2_behavior()
 
 class DNNApproximator:
     """ Critic for the DDPG Algorithm, Q-Value function approximator
     """
 
-    def __init__(self, inp_dim, out_dim, lr, tau):
+    def __init__(self, inp_dim, out_dim, lr, tau, min_max=-1):#min=-1,max=+1
         # Dimensions and Hyperparams
         self.env_dim = inp_dim
         self.act_dim = out_dim
         self.tau, self.lr = tau, lr
         self.model = self.network()
         self.model.compile(Adam(self.lr), 'mse')
-        self.AdamOpt=AdamOpt.AdamOpt(sign=-1,step=self.tau)
+        self.AdamOpt=AdamOpt.AdamOpt(sign=min_max,step=self.tau)
     def network(self):
         """ Assemble Critic network to predict q-values
         """

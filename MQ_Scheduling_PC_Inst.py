@@ -1,7 +1,7 @@
 import random
 import numpy as np
 import scipy.stats as stats
-import dqn_WCNC as dqn
+import Meta_DQN as dqn
 # import DDPG.ddpg_custom as ddpgc
 #import matplotlib.pyplot as plt
 import AdamOpt as AdamOpt
@@ -75,7 +75,7 @@ class LRU_MQ_Cache:
             self.fwd_temp[Cind]=set([])
 
 class DQNMulticastFadingQueue:
-    def __init__(self, requests, timelines, users, service_time, total_users, total_good_users, cache_size,total_services,threadName):
+    def __init__(self, requests, timelines, users, service_time, total_users, total_good_users, cache_size,total_services,threadName,meta_param_len=1, id=0):
         self.ThreadName=threadName
         self.requests = np.array(requests)
         self.timelines = np.array(timelines)
@@ -152,7 +152,7 @@ class DQNMulticastFadingQueue:
         [self.AutoEncoderLoopDef() for i in range(0,self.LoopDefWindow)]
         self.action_vector=np.array([1,2,4,6,8,10,12,14,16,18,20,25,30,40,50])
         # self.DDPGA = ddpgc.DDPG(self.ddpg_action_prob.size, self.LoopDefState.shape,1,1,50,lr=.05,tau=self.tau_ddpg)
-        self.DDQNA = dqn.DQNAgent(self.LoopDefState.size,self.action_vector.size,self.avg_power_constraint,self.action_vector)
+        self.DDQNA = dqn.DQNAgent(self.LoopDefState.size,self.action_vector.size,self.avg_power_constraint,self.action_vector,meta_param_len,id)
         self.DNN=NA.DNNApproximator((1,3),1,.01,.01)
         self.reward_array=np.array([])
         self.first=0

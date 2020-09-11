@@ -8,11 +8,14 @@ from tensorflow.compat.v1.keras.optimizers import Adam
 from tensorflow.compat.v1.keras.callbacks import History
 from statistics import mean
 import AdamOpt as AdamOpt
+import AdamOpt as AdamOptMeta
+import SharedWeights
 import math
 
 # import pickle
 
 import tensorflow as tf
+import NeuralApprox as NA
 
 #tf.disable_v2_behavior()
 history = History()
@@ -21,7 +24,8 @@ Episodes = 1000
 
 
 class DQNAgent:
-    def __init__(self, state_size, action_size, power_constraint, power_val_array):
+    def __init__(self, state_size, action_size, power_constraint, power_val_array, meta_param_len,id):
+        self.agent_id=id
         self.state_size = state_size
         self.action_size = action_size
         self.power_constraint = power_constraint
@@ -36,6 +40,7 @@ class DQNAgent:
         self.penalty_lambda_array = np.array(self.penalty_lambda_array)
         self.AdamOpt=AdamOpt.AdamOpt(step=self.lambda_learning_rate)
         self.memory = deque(maxlen=30000)  # Memory D for storing states, actions, rewards etc
+        self.meta_memory = deque(maxlen=1000)  # Memory D for storing states, actions, rewards etc
         self.gamma = 0.9  # discount factor gamma = 1 (average case)
         self.epsilon = 1.0  # keep choosing random actions in the beginning and decay epsilon as time
         # progresses
@@ -46,6 +51,7 @@ class DQNAgent:
 
         self.model = self.build_model()  # neural network to learn q function
         self.target_model = self.build_model()  # neural network to estimate target q function
+        self.meta_model = self.build_model()
 
         self.update_target_model()  # Initialize target model to be same as model (theta_ = theta)
         # self.power_values = np.arange(1, 52, 2.55) / 49.45
@@ -55,7 +61,9 @@ class DQNAgent:
         self.num_of_actions = 0
         self.reward_array = []
         self.reward_array = np.array(self.reward_array)
-
+        self.meta_param_len=meta_param_len
+        self.DSGDA=NA.DNNApproximator((1,self.meta_param_len),1,.01,.01)
+        SharedWeights.weight_size=np.size(self.meta_model.get_weights())
     # This function builds a neural network consisting of 4 layers including the input layer
     def build_model(self):
         model = Sequential()
@@ -74,8 +82,14 @@ class DQNAgent:
     # This function sets weights of target model to be same as model used for training
     def update_target_model(self):
         self.target_model.set_weights(self.model.get_weights())
+        self.update_global_weight()
+
+    def update_global_weight(self):
+        SharedWeights.weights[self.agent_id.astype(int)]=self.target_model.get_weights()
+
 
     # Get action using epsilon greedy policy
+
     def get_action(self, state):
 
         if np.random.rand() <= self.epsilon:
@@ -98,6 +112,29 @@ class DQNAgent:
             self.reward_array = np.append(self.reward_array, max_reward_value)
             return action_power_index  # choose action (power value)which gives maximum reward.
 
+    def get_meta_action(self, state):
+        # if np.random.rand() <= self.epsilon:
+        #     self.num_of_actions = self.num_of_actions + 1
+        #     action_power_index = random.randrange(self.action_size)  # random action
+        #     self.power_val_chosen.append(self.power_val_array[action_power_index])
+        #     self.mean_pow_val = mean(self.power_val_chosen)
+        #     return action_power_index
+        # else:
+        state = np.reshape(state, [1, self.state_size])
+        q_value = self.meta_model.predict(state)
+        max_reward_value = np.amax(q_value[0])
+        action_power_index = np.argmax(q_value[0])  # action giving max reward
+        self.power_val_chosen.append(self.power_val_array[action_power_index])
+        self.mean_pow_val = mean(self.power_val_chosen)
+
+        self.cumulative_reward = self.cumulative_reward + max_reward_value
+        self.num_of_actions = self.num_of_actions + 1
+        self.average_reward = self.cumulative_reward / self.num_of_actions
+        self.reward_array = np.append(self.reward_array, max_reward_value)
+        return action_power_index  # choose action (power value)which gives maximum reward.
+
+    def meta_step(self, meta_param):
+        meta_param=Ad
     # save sample in memory
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))  # append to memory
@@ -118,21 +155,21 @@ class DQNAgent:
             max_reward_value = np.amax(q_value[0])  # max reward for next state (max_a'(Q^(s',a',theta^)))
             target = (reward - self.penalty_lambda * self.power_val_array[action] + self.gamma * max_reward_value)
             # y_j + gamma *max_a'(Q^(s',a',theta^))
-            try:
-                with tf.device("gpu:0"):
-                    target_f = self.model.predict(state)
-            except:
-                target_f = self.model.predict(state)
+            # try:
+            #     with tf.device("gpu:0"):
+            #         target_f = self.model.predict(state)
+            # except:
+            target_f = self.model.predict(state)
             target_f[0][action] = target
             target_array = np.append(target_array, target_f)
 
         state_array = np.reshape(state_array, [batch_size, self.state_size])
         target_array = np.reshape(target_array, [batch_size, self.action_size])
-        try:
-            with tf.device("gpu:0"):
-                hist = self.model.fit(state_array, target_array, epochs=1, verbose=0)  # run neural network and back propagation
-        except:
-            hist = self.model.fit(state_array, target_array, epochs=1, verbose=0)  # run neural network and back propagation
+        # try:
+        #     with tf.device("gpu:0"):
+        #         hist = self.model.fit(state_array, target_array, epochs=1, verbose=0)  # run neural network and back propagation
+        # except:
+        hist = self.model.fit(state_array, target_array, epochs=1, verbose=0)  # run neural network and back propagation
         # with open('/home/pratheek/IISc_ML/Machine Learning/Neuralnets/Ram '
         #        'simulation/copy_multiQueue/lam0.1_abs.error_epochs10_q>max', 'wb') as file_pi:
         #  pickle.dump(hist.history, file_pi)
