@@ -44,13 +44,13 @@ class DNNApproximator:
         """
         return self.model.predict(inp)
 
-    def train_on_batch(self, states, critic_target):
+    def train_on_batch(self, inputs, outputs):
         """ Train the critic network on batch of sampled experience
         """
         # print(actions)
         # return self.model.train_on_batch([states, actions], critic_target)
         # with tf.device("gpu:0"):
-        return self.model.train_on_batch(states, critic_target)
+        return self.model.train_on_batch(inputs, outputs)
     #
     # def transfer_weights(self):
     #     """ Transfer model weights to target model with a factor of Tau

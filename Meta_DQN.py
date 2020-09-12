@@ -39,6 +39,7 @@ class DQNAgent:
         self.penalty_lambda_array = []
         self.penalty_lambda_array = np.array(self.penalty_lambda_array)
         self.AdamOpt=AdamOpt.AdamOpt(step=self.lambda_learning_rate)
+        self.AdamOptMeta = AdamOptMeta.AdamOpt(step=self.lambda_learning_rate,sign=-1)
         self.memory = deque(maxlen=30000)  # Memory D for storing states, actions, rewards etc
         self.meta_memory = deque(maxlen=1000)  # Memory D for storing states, actions, rewards etc
         self.gamma = 0.9  # discount factor gamma = 1 (average case)
@@ -63,7 +64,12 @@ class DQNAgent:
         self.reward_array = np.array(self.reward_array)
         self.meta_param_len=meta_param_len
         self.DSGDA=NA.DNNApproximator((1,self.meta_param_len),1,.01,.01)
-        SharedWeights.weight_size=np.size(self.meta_model.get_weights())
+        # SharedWeights.weights = np.append(SharedWeights.weights, self.target_model.get_weights())
+        SharedWeights.weights.append(self.target_model.get_weights())
+        SharedWeights.weight_size=SharedWeights.weight_size+1
+        # self.update_global_weight()
+        # self.get_meta_actor_weight(np.ones(SharedWeights.weight_size)*.1)
+        #SharedWeights.weight_size=np.size(self.meta_model.get_weights())
     # This function builds a neural network consisting of 4 layers including the input layer
     def build_model(self):
         model = Sequential()
@@ -82,11 +88,36 @@ class DQNAgent:
     # This function sets weights of target model to be same as model used for training
     def update_target_model(self):
         self.target_model.set_weights(self.model.get_weights())
-        self.update_global_weight()
 
     def update_global_weight(self):
+        # print(np.shape(SharedWeights.weights))
+        # print(np.shape(self.target_model.get_weights()))
+        # print(np.shape(self.target_model.get_weights()[0]))
+        # print(np.shape(self.target_model.get_weights()[1]))
+        # print(np.shape(self.target_model.get_weights()[2]))
+        # print(np.shape(self.target_model.get_weights()[3]))
+        # print(np.shape(self.target_model.get_weights()[4]))
+        # print(np.shape(self.target_model.get_weights()[5]))
+        print("Agent %d Updating Global Weights..."%self.agent_id)
         SharedWeights.weights[self.agent_id.astype(int)]=self.target_model.get_weights()
+        # print(len(SharedWeights.weights))
 
+
+    def get_meta_actor_weight(self, meta_param):
+        temp_weight = SharedWeights.weights[0]
+
+        for j in range(len(temp_weight)):
+            temp_weight[j]= 0.0*SharedWeights.weights[0][j]
+        # print(temp_weight)
+        for i in np.arange(0,len(meta_param)):
+            for j in range(len(temp_weight)):
+                # print(meta_param)
+                temp_weight[j]=temp_weight[j]+meta_param[i]*SharedWeights.weights[i][j]
+        print('Length:',len(temp_weight))
+        return temp_weight
+
+    def update_meta_actor(self, weights):
+        self.meta_model.set_weights(weights)
 
     # Get action using epsilon greedy policy
 
@@ -134,12 +165,40 @@ class DQNAgent:
         return action_power_index  # choose action (power value)which gives maximum reward.
 
     def meta_step(self, meta_param):
-        meta_param=Ad
+        meta_param=AdamOptMeta.AdamOpt(meta_param,self.DSGDA.gradient_function(meta_param),.001)
+        return meta_param
+
+    # def meta_train(self,inputs,outputs):
+    #     self.DSGDA.train_on_batch(inputs,outputs)
     # save sample in memory
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))  # append to memory
 
+    def meta_remember(self,input,output):
+        self.meta_memory.append((input,output))
     # Replay from memory
+
+    def meta_replay(self,batch_size):
+        mini_batch=random.sample(self.meta_memory,batch_size)
+        input_memory=deque()
+        output_memory=deque()
+        for input_i,output_i in mini_batch:
+            input_memory.append(input_i)
+            output_memory.append(output_i)
+        output = (np.array(output_memory)).reshape(batch_size, 1, 1)
+        input = (np.array(input_memory)).reshape(batch_size, 1, self.meta_param_len)
+        self.DSGDA.train_on_batch(input,output)
+
+    def penalty_step(self):
+        self.mean_pow_val = mean(self.power_val_chosen[-200:])
+        self.penalty_lambda = self.AdamOpt.AdamOptimizer(self.penalty_lambda,
+                                                         (self.mean_pow_val - self.power_constraint), 1)
+        # self.penalty_lambda=self.AdamOpt.AdamOptimizer(self.penalty_lambda,(self.mean_pow_val - self.power_constraint),1/(1+0.00001*self.target_model_update_count*np.log10(10+np.log10(10+np.log10(10+self.target_model_update_count)))))
+        # self.penalty_lambda = self.penalty_lambda + self.lambda_learning_rate * (self.mean_pow_val - self.power_constraint)
+        self.penalty_lambda = max(self.penalty_lambda, 1 / np.amax(self.power_val_array))
+        # self.lambda_learning_rate = self.lambda_learning_rate * self.lambda_lr_decay
+        # self.lambda_learning_rate = self.lambda_learning_rate * 1/(1+0.00001*self.target_model_update_count*np.log10(10+np.log10(10+self.target_model_update_count)))
+        self.penalty_lambda_array = np.append(self.penalty_lambda_array, self.penalty_lambda)
     def replay(self):
         batch_size = min(len(self.memory), self.batch_size)
         mini_batch = random.sample(self.memory, batch_size)  # sample from memory and create a mini batch
@@ -180,14 +239,7 @@ class DQNAgent:
             self.update_target_model()
 
         if (self.target_model_update_count % 1) == 0:
-            self.mean_pow_val = mean(self.power_val_chosen[-200:])
-            self.penalty_lambda=self.AdamOpt.AdamOptimizer(self.penalty_lambda,(self.mean_pow_val - self.power_constraint),1)
-            # self.penalty_lambda=self.AdamOpt.AdamOptimizer(self.penalty_lambda,(self.mean_pow_val - self.power_constraint),1/(1+0.00001*self.target_model_update_count*np.log10(10+np.log10(10+np.log10(10+self.target_model_update_count)))))
-            # self.penalty_lambda = self.penalty_lambda + self.lambda_learning_rate * (self.mean_pow_val - self.power_constraint)
-            self.penalty_lambda = max(self.penalty_lambda, 1 / np.amax(self.power_val_array))
-            # self.lambda_learning_rate = self.lambda_learning_rate * self.lambda_lr_decay
-            # self.lambda_learning_rate = self.lambda_learning_rate * 1/(1+0.00001*self.target_model_update_count*np.log10(10+np.log10(10+self.target_model_update_count)))
-            self.penalty_lambda_array = np.append(self.penalty_lambda_array, self.penalty_lambda)
+            self.penalty_step()
 
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay  # reducing epsilon

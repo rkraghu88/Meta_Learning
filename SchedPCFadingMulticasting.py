@@ -3,7 +3,7 @@
 # os.environ["TF_XLA_FLAGS"]="--tf_xla_auto_jit=16 --tf_xla_cpu_global_jit"
 # os.environ["USE_DAAL4PY_SKLEARN"]="YES"
 
-import MQ_Scheduling_PC_Inst as MQ
+import MQ_Scheduling_PC_Inst as MQueue
 import numpy as np
 import scipy.stats as stats
 import SharedWeights
@@ -53,10 +53,9 @@ class ThreadRun:
             requests=np.array(seq1)
             services=0
             #FadingMQ=MQ.MulticastQueue(requests, timelines, users, service_time, total_users, cache_size)
-            self.FadingMQ=MQ.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName, self.meta_param_len, self.id)
+            self.FadingMQ=MQueue.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName, self.meta_param_len, self.id)
 
-            SharedWeights.weights=np.append(SharedWeights.weights,self.FadingMQ.DDQNA.meta_model.get_weights())
-            self.FadingMQ.DDQNA.update_global_weights()
+
             ret_val=1
             while(ret_val):
                 #print('--')

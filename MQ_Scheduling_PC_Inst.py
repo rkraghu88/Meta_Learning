@@ -75,8 +75,13 @@ class LRU_MQ_Cache:
             self.fwd_temp[Cind]=set([])
 
 class DQNMulticastFadingQueue:
-    def __init__(self, requests, timelines, users, service_time, total_users, total_good_users, cache_size,total_services,threadName,meta_param_len=1, id=0):
+    def __init__(self, requests, timelines, users, service_time, total_users, total_good_users, cache_size,total_services,threadName,meta_parameter,meta_param_len=1, id=0):
+        self.load = 0
         self.ThreadName=threadName
+        self.meta_loop=0
+        self.meta_interval=2000
+        self.meta_loop_counter=0
+        self.meta_loop_max=10
         self.requests = np.array(requests)
         self.timelines = np.array(timelines)
         self.users= np.array(users)
@@ -115,12 +120,15 @@ class DQNMulticastFadingQueue:
         self.service_vecs = [0 for i in range(self.queue_window)]
         self.TransLoopDefer_vec=[0,0,0]
         self.schWindow=100
+        self.metaWindow = 100
         self.schTime=0
-        self.state_memory=deque(maxlen=10000)
-        self.target_memory=deque(maxlen=10000)
+        self.state_memory=deque(maxlen=100000)
+        self.target_memory=deque(maxlen=100000)
         self.starting_vector=np.random.randint(0,self.schWindow,size=(self.schWindow,3))
         self.starting_vector=np.divide(self.starting_vector,self.starting_vector.sum(axis=1).reshape(self.schWindow,1))
-        self.reward_window_sch=deque(maxlen=10000)
+        self.reward_window_sch=deque(maxlen=100000)
+        self.reward_window_meta=deque(maxlen=100000)
+        self.meta_reward_counter=0
         self.reward_sch=0
         self.reward_window=deque(maxlen=10000) #Holds last 500 sojourn times
         self.power_window=deque(maxlen=1000) #Holds a maximum of 1000 power actions
@@ -135,6 +143,7 @@ class DQNMulticastFadingQueue:
         self.LoopDefWindow=1
         self.action=0
         self.action_prob=np.array([1, 0, 0])
+        self.meta_parameter=meta_parameter
         self.actionProbVec=np.array([])
         #self.ddpg_action_prob=np.array([-1,1,-1,self.transmit_power*2/self.max_power-1])
         # self.ddpg_action_prob=np.array([self.transmit_power*2/self.max_power-1])
@@ -160,6 +169,7 @@ class DQNMulticastFadingQueue:
         self.next_state=self.LoopDefState
         self.LoopDefState=np.array([])
         self.time=0
+        self.load=1
     # This function serves the requests and updates the cache
     # def live_plotter(self,x_vec,y1_data,identifier='',pause_time=0.1):
     #     if self.first==0:
@@ -486,6 +496,13 @@ class DQNMulticastFadingQueue:
             sojActionVec=(self.serve_stop_time-temp_time_rw[self.servicable_users])
             [self.reward_window_sch.append(i) for i in sojActionVec]
 
+    def InstRewardMeta(self):
+        temp_time_rw=np.array(self.queue[self.action].time_of_request)
+        if self.servicable_users.__len__()>0:
+            sojActionVec=(self.serve_stop_time-temp_time_rw[self.servicable_users])
+            [self.reward_window_meta.append(i) for i in sojActionVec]
+            self.meta_reward_counter=self.meta_reward_counter+1
+
     def InstRewardLoopDef(self):
         temp_time_rw=np.array(self.queue[self.action].time_of_request)
         if self.servicable_users.__len__()>0:
@@ -526,11 +543,16 @@ class DQNMulticastFadingQueue:
         self.curr_state=self.LoopDefState
         if self.enable_ddpg==1:
             self.DDQNA.remember(old_state, self.ddpg_action_prob, self.reward, self.curr_state, False)
-            self.ddpg_action_prob=self.DDQNA.get_action(self.curr_state)
-            self.transmit_power = self.action_vector[self.ddpg_action_prob]
-            self.powerVecsPolicy=np.append(self.powerVecsPolicy,self.transmit_power)
 
-
+            if (self.meta_loop==0):
+                self.ddpg_action_prob=self.DDQNA.get_action(self.curr_state)
+                self.transmit_power = self.action_vector[self.ddpg_action_prob]
+                self.powerVecsPolicy=np.append(self.powerVecsPolicy,self.transmit_power)
+            else:
+                self.ddpg_action_prob = self.DDQNA.get_meta_action(self.curr_state)
+                self.transmit_power = self.action_vector[self.ddpg_action_prob]
+                self.powerVecsPolicy = np.append(self.powerVecsPolicy, self.transmit_power)
+                self.InstRewardMeta()
         self.action=0
 
         self.thresholdPowerIndex(self.action)#Identify servicable users and calculate reward
@@ -558,7 +580,30 @@ class DQNMulticastFadingQueue:
                 # self.DDPGA.critic.tau=np.max([self.tau_ddpg/(self.time-300)**0,0])
                 # self.DDPGA.actor.tau=np.max([self.tau_ddpg/(self.time-300)**0,0])
                 # self.DDPGA.train()
-                self.DDQNA.replay()
+
+                if (self.meta_loop == 0):
+                    self.DDQNA.replay()
+                    if self.time%50==0:
+                        self.DDQNA.update_global_weight()
+                    if (self.time%self.meta_interval==0):
+                        self.meta_loop=1
+                        print("\n Starting Meta Loop")
+                else:
+                    self.DDQNA.penalty_step()
+                    if self.meta_reward_counter==self.metaWindow:
+                        self.reward_meta = np.mean(self.reward_window_meta)
+                        self.reward_window_meta.clear()
+                        self.DDQNA.meta_remember(self.meta_parameter,self.reward_meta)
+                        if(len(self.DDQNA.meta_memory)>=5):
+                            self.DDQNA.meta_replay(np.min(len(self.DDQNA.meta_memory),50))
+                            self.meta_parameter=self.DDQNA.meta_step(self.meta_parameter)
+                            self.DDQNA.update_meta_actor(self.DDQNA.get_meta_actor_weight(self.meta_parameter))
+                            self.meta_loop_counter=self.meta_loop_counter+1
+                        if (self.meta_loop_counter==self.meta_loop_max):
+                            self.meta_loop_counter=0
+                            self.meta_loop=0
+
+
                 # if np.remainder(self.time,1)==0:
                     # if np.abs(np.mean(self.powerVecs[-300:])-self.avg_power_constraint)>.01:
                     #     power_grad=np.mean(self.powerVecs[-300:])-self.avg_power_constraint
@@ -571,6 +616,7 @@ class DQNMulticastFadingQueue:
                     # self.power_beta=np.clip(self.AdamOpt.AdamOptimizer(self.power_beta,power_grad,1/(self.time-300)**0), -self.total_good_users/self.avg_power_constraint,self.total_good_users/self.avg_power_constraint)
         self.reward_array=np.append(self.reward_array, np.mean(self.sojournTimes[-np.min([2000,self.sojournTimes.__len__()]):]))
         self.reward_array=self.reward_array[~np.isnan(self.reward_array)]
+
         if (np.remainder(self.service_vecs[0], self.schWindow) == 0) & (self.enable_sch == 1):
 
             self.schTime+=1
