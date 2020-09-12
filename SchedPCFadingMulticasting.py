@@ -13,9 +13,10 @@ import SharedWeights
 #plt.switch_backend("TkAgg")
 
 class ThreadRun:
-    def __init__(self, lambda_vec,total_users=2,good_users=1,popularity=1.0001,thread_name="default thread", meta_param_len=1, agent_id=0):
+    def __init__(self, lambda_vec,meta_parameter,total_users=2,good_users=1,popularity=1.0001,thread_name="default thread", meta_param_len=1, agent_id=0):
 
         self.ThreadName=thread_name
+        self.meta_parameter=meta_parameter
         self.meta_param_len=meta_param_len
         self.id=agent_id
         self.N_Files = 100
@@ -53,7 +54,7 @@ class ThreadRun:
             requests=np.array(seq1)
             services=0
             #FadingMQ=MQ.MulticastQueue(requests, timelines, users, service_time, total_users, cache_size)
-            self.FadingMQ=MQueue.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName, self.meta_param_len, self.id)
+            self.FadingMQ=MQueue.DQNMulticastFadingQueue(requests, timelines, users, self.service_time, self.total_users, self.good_users,self.cache_size,self.total_services, self.ThreadName, self.meta_parameter ,self.meta_param_len, self.id)
 
 
             ret_val=1

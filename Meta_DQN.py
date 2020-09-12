@@ -99,7 +99,7 @@ class DQNAgent:
         # print(np.shape(self.target_model.get_weights()[4]))
         # print(np.shape(self.target_model.get_weights()[5]))
         print("Agent %d Updating Global Weights..."%self.agent_id)
-        SharedWeights.weights[self.agent_id.astype(int)]=self.target_model.get_weights()
+        SharedWeights.weights[self.agent_id]=self.target_model.get_weights()
         # print(len(SharedWeights.weights))
 
 
@@ -111,9 +111,9 @@ class DQNAgent:
         # print(temp_weight)
         for i in np.arange(0,len(meta_param)):
             for j in range(len(temp_weight)):
-                # print(meta_param)
+                #print(meta_param)
                 temp_weight[j]=temp_weight[j]+meta_param[i]*SharedWeights.weights[i][j]
-        print('Length:',len(temp_weight))
+        #print('Length:',len(temp_weight))
         return temp_weight
 
     def update_meta_actor(self, weights):
@@ -165,8 +165,8 @@ class DQNAgent:
         return action_power_index  # choose action (power value)which gives maximum reward.
 
     def meta_step(self, meta_param):
-        meta_param=AdamOptMeta.AdamOpt(meta_param,self.DSGDA.gradient_function(meta_param),.001)
-        return meta_param
+        meta_param=self.AdamOptMeta.AdamOptimizer(meta_param,self.DSGDA.gradient_function(meta_param),1.0)
+        return meta_param[0][0]
 
     # def meta_train(self,inputs,outputs):
     #     self.DSGDA.train_on_batch(inputs,outputs)

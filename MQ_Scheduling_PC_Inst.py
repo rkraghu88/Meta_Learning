@@ -79,7 +79,7 @@ class DQNMulticastFadingQueue:
         self.load = 0
         self.ThreadName=threadName
         self.meta_loop=0
-        self.meta_interval=2000
+        self.meta_interval=500
         self.meta_loop_counter=0
         self.meta_loop_max=10
         self.requests = np.array(requests)
@@ -111,6 +111,7 @@ class DQNMulticastFadingQueue:
         #DQN Parameters
         self.enable_ddpg=1
         self.enable_sch=1
+        self.enable_meta=1
         self.retransmit_no=1
         self.stop_sch_training=0
         self.inputvector=[]
@@ -120,7 +121,7 @@ class DQNMulticastFadingQueue:
         self.service_vecs = [0 for i in range(self.queue_window)]
         self.TransLoopDefer_vec=[0,0,0]
         self.schWindow=100
-        self.metaWindow = 100
+        self.metaWindow = 10
         self.schTime=0
         self.state_memory=deque(maxlen=100000)
         self.target_memory=deque(maxlen=100000)
@@ -552,12 +553,14 @@ class DQNMulticastFadingQueue:
                 self.ddpg_action_prob = self.DDQNA.get_meta_action(self.curr_state)
                 self.transmit_power = self.action_vector[self.ddpg_action_prob]
                 self.powerVecsPolicy = np.append(self.powerVecsPolicy, self.transmit_power)
-                self.InstRewardMeta()
+
         self.action=0
 
         self.thresholdPowerIndex(self.action)#Identify servicable users and calculate reward
         self.InstRewardLoopDef()   #Gets instantatneous reward for action using servicable users
         self.InstRewardSch() #Reward for Scheduling
+        if(self.meta_loop==1):
+            self.InstRewardMeta()
         self.makeElementInService(self.action) #Include only servicable users
         self.deleteUsers(self.action) #Delete only serviced users
         self.service_vecs[self.action]+=1
@@ -586,22 +589,24 @@ class DQNMulticastFadingQueue:
                     if self.time%50==0:
                         self.DDQNA.update_global_weight()
                     if (self.time%self.meta_interval==0):
-                        self.meta_loop=1
+                        self.meta_loop=self.enable_meta
                         print("\n Starting Meta Loop")
                 else:
                     self.DDQNA.penalty_step()
                     if self.meta_reward_counter==self.metaWindow:
                         self.reward_meta = np.mean(self.reward_window_meta)
                         self.reward_window_meta.clear()
+                        self.meta_reward_counter=0
                         self.DDQNA.meta_remember(self.meta_parameter,self.reward_meta)
-                        if(len(self.DDQNA.meta_memory)>=5):
-                            self.DDQNA.meta_replay(np.min(len(self.DDQNA.meta_memory),50))
-                            self.meta_parameter=self.DDQNA.meta_step(self.meta_parameter)
-                            self.DDQNA.update_meta_actor(self.DDQNA.get_meta_actor_weight(self.meta_parameter))
-                            self.meta_loop_counter=self.meta_loop_counter+1
-                        if (self.meta_loop_counter==self.meta_loop_max):
-                            self.meta_loop_counter=0
-                            self.meta_loop=0
+                        self.DDQNA.meta_replay(np.min([len(self.DDQNA.meta_memory),50]))
+                        self.meta_parameter=self.DDQNA.meta_step(self.meta_parameter)
+                        self.DDQNA.update_meta_actor(self.DDQNA.get_meta_actor_weight(self.meta_parameter))
+                        self.meta_loop_counter=self.meta_loop_counter+1
+                    #print(self.ThreadName,self.meta_loop)
+                    if (self.meta_loop_counter==self.meta_loop_max):
+                        self.meta_loop_counter=0
+                        self.meta_loop=0
+                        print("\n Out of Meta Loop...")
 
 
                 # if np.remainder(self.time,1)==0:
@@ -665,7 +670,7 @@ class DQNMulticastFadingQueue:
         if np.remainder(self.service_vecs[0],100)==0:
             if self.reward_array.size:
                 #self.live_plotter(np.arange(0,self.reward_array.size),self.reward_array)
-                print(self.ThreadName, self.reward_array[-1], self.action_prob,self.transmit_power,self.DDQNA.penalty_lambda,[np.min(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):]),np.mean(self.powerVecs[-np.min([1000,self.powerVecs.__len__()]):]),np.max(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):])],np.std(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):]))
+                print(self.ThreadName, self.reward_array[-1], self.meta_parameter, self.action_prob,self.transmit_power,self.DDQNA.penalty_lambda,[np.min(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):]),np.mean(self.powerVecs[-np.min([1000,self.powerVecs.__len__()]):]),np.max(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):])],np.std(self.powerVecsPolicy[-np.min([1000,self.powerVecs.__len__()]):]))
                 # print(noise_var,self.transmit_power,self.ddpg_action_prob*(self.max_power-self.avg_power_constraint))
                 #plt.savefig('Reward.png')
                 # if np.remainder(self.time,1000)==0:
